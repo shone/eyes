@@ -1,7 +1,7 @@
 {
   "name": "Googly eyes",
   "short_name": "Googly eyes",
-  "start_url": "/",
+  "start_url": "/eyes/",
   "display": "fullscreen",
   "orientation": "landscape",
   "theme_color": "#219ebc",

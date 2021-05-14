@@ -19,6 +19,26 @@
 			// Register service worker so app can be installed as a PWA
 			navigator.serviceWorker.register('service-worker.js', {scope: './'});
 		}
+
+		let installButton = null;
+		window.onbeforeinstallprompt = event => {
+			event.preventDefault();
+			if (!installButton) {
+				installButton = document.createElement('button');
+				installButton.classList.add('install');
+				installButton.textContent = 'install';
+				document.body.append(installButton);
+			}
+			installButton.onclick = () => {
+				event.prompt();
+			}
+			event.userChoice.then(result => {
+				if (result.outcome === 'accepted') {
+					installButton.remove();
+				}
+			});
+		}
+
 		const leftPupil  = document.querySelector('.eye.left .pupil');
 		const rightPupil = document.querySelector('.eye.right .pupil');
 		if (DeviceMotionEvent.requestPermission) {
@@ -74,6 +94,15 @@
 			height: 6rem;
 			border-radius: 50%;
 			background: black;
+		}
+		button.install {
+			position: fixed;
+			right: 5px;
+			bottom: 5px;
+			width: 110px;
+			height: 50px;
+			font-size: 25px;
+			padding: 0;
 		}
 	</style>
 </html>

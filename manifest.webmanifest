@@ -1,0 +1,27 @@
+{
+  "name": "Googly eyes",
+  "short_name": "Googly eyes",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "theme_color": "#219ebc",
+  "background_color": "#219ebc",
+  "description": "Googly eyes",
+  "icons": [
+    {
+      "src": "icon_64x64.png",
+      "sizes": "64x64",
+      "type": "image/png"
+    },
+    {
+      "src": "icon_192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon_512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<title>Googly-eyes</title>
+		<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0' />
+		<meta name="theme-color" content="#219ebc">
+		<link rel="shortcut icon" href="/common/favicon_64x64.png">
+		<link rel="manifest" href="manifest.webmanifest">
+	</head>
+
+	<body>
+		<div class="eye left" > <span class="pupil"></span> </div>
+		<div class="eye right"> <span class="pupil"></span> </div>
+	</body>
+
+	<script>
+		if (navigator.serviceWorker) {
+			// Register service worker so app can be installed as a PWA
+			navigator.serviceWorker.register('service-worker.js', {scope: './'});
+		}
+		const leftPupil  = document.querySelector('.eye.left .pupil');
+		const rightPupil = document.querySelector('.eye.right .pupil');
+		if (DeviceMotionEvent.requestPermission) {
+			let hasRequestedPermission = false;
+			document.body.onclick = async () => {
+				try {
+					var response = await DeviceMotionEvent.requestPermission()
+				} catch(error) {
+					alert(error);
+				}
+				if (response !== 'granted') {
+					alert(response);
+				}
+			}
+		}
+		window.addEventListener("devicemotion", event => {
+			const pupilTransform = `translate(${(-event.rotationRate.alpha / 120) * 12}vw, ${(event.rotationRate.beta / 120) * 12}vw)`;
+			leftPupil.style.transform = pupilTransform;
+			rightPupil.style.transform = pupilTransform;
+		});
+
+	</script>
+
+	<style>
+		html {
+			height: 100%;
+		}
+		body {
+			height: 100%;
+			margin: 0;
+			overflow: hidden;
+			background: #219ebc;
+			display: flex;
+			justify-content: center;
+			align-items:     center;
+		}
+		.eye {
+			width:  40vw;
+			height: 40vw;
+			overflow: hidden;
+			background: white;
+			border-radius: 50%;
+			border: 2vw solid black;
+			display: flex;
+			justify-content: center;
+			align-items:     center;
+		}
+		.eye:first-of-type {
+			margin-right: 6vw;
+		}
+		.pupil {
+			width:  6rem;
+			height: 6rem;
+			border-radius: 50%;
+			background: black;
+		}
+	</style>
+</html>

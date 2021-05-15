@@ -41,6 +41,59 @@
 
 		const leftPupil  = document.querySelector('.eye.left .pupil');
 		const rightPupil = document.querySelector('.eye.right .pupil');
+
+		let isDragging = false;
+
+		function vectorNormalized(v) {
+			const length = Math.sqrt(v.x*v.x + v.y*v.y);
+			return {
+				x: v.x / length,
+				y: v.y / length,
+			}
+		}
+
+		function lookAt(p) {
+			const leftPupilPos  = {x: window.innerWidth * .3, y: window.innerHeight / 2};
+			const rightPupilPos = {x: window.innerWidth * .6, y: window.innerHeight / 2};
+			const vectorLeft = vectorNormalized({
+				x: p.x - leftPupilPos.x,
+				y: p.y - leftPupilPos.y,
+			});
+			const vectorRight = vectorNormalized({
+				x: p.x - rightPupilPos.x,
+				y: p.y - rightPupilPos.y,
+			});
+			leftPupil.style.transform = `translate(${vectorLeft.x * 12}vw, ${vectorLeft.y * 12}vw)`;
+			rightPupil.style.transform = `translate(${vectorRight.x * 12}vw, ${vectorRight.y * 12}vw)`;
+		}
+		
+		document.body.onpointerdown = event => {
+			if (document.body.onpointermove) {
+				return;
+			}
+			event.preventDefault();
+			const pointerId = event.pointerId;
+			document.body.setPointerCapture(pointerId);
+			isDragging = true;
+			lookAt({x: event.screenX, y: event.screenY});
+			document.body.onpointermove = event => {
+				if (event.pointerId !== pointerId) {
+					return;
+				}
+				lookAt({x: event.screenX, y: event.screenY});
+			}
+			document.body.onpointerup = event => {
+				if (event.pointerId !== pointerId) {
+					return;
+				}
+				isDragging = false;
+				document.body.onpointermove = null;
+				document.body.onpointerup = null;
+				leftPupil.style.transform = '';
+				rightPupil.style.transform = '';
+			}
+		}
+
 		if (DeviceMotionEvent.requestPermission) {
 			let hasRequestedPermission = false;
 			document.body.onclick = async () => {
@@ -55,6 +108,9 @@
 			}
 		}
 		window.addEventListener("devicemotion", event => {
+			if (isDragging) {
+				return;
+			}
 			const pupilTransform = `translate(${(-event.rotationRate.alpha / 120) * 12}vw, ${(event.rotationRate.beta / 120) * 12}vw)`;
 			leftPupil.style.transform = pupilTransform;
 			rightPupil.style.transform = pupilTransform;
@@ -74,6 +130,9 @@
 			display: flex;
 			justify-content: center;
 			align-items:     center;
+			user-select: none;
+			-webkit-user-select: none;
+			touch-action: none;
 		}
 		.eye {
 			width:  40vw;

@@ -94,12 +94,12 @@
 				document.body.setPointerCapture(pointerId);
 			}
 			isDragging = true;
-			lookAt({x: event.screenX, y: event.screenY});
+			lookAt({x: event.pageX, y: event.pageY});
 			document.body.onpointermove = event => {
 				if (event.pointerId !== pointerId) {
 					return;
 				}
-				lookAt({x: event.screenX, y: event.screenY});
+				lookAt({x: event.pageX, y: event.pageY});
 			}
 			document.body.onpointerup = document.body.onpointercancel = event => {
 				if (event.pointerId !== pointerId) {
@@ -213,9 +213,11 @@
 			width:  40vw;
 			height: 40vw;
 			overflow: hidden;
+			z-index: 0; /* Ensure overflow: hidden on Safari clips along border-radius. See https://stackoverflow.com/a/64885552 */
 			background: white;
 			border-radius: 50%;
 			border: 2vw solid black;
+			box-shadow: 0 0 6vw black, inset 0vw -1vw 6vw black;
 			display: flex;
 			justify-content: center;
 			align-items:     center;
@@ -224,8 +226,8 @@
 			margin-right: 6vw;
 		}
 		.pupil {
-			width:  6rem;
-			height: 6rem;
+			width:  12vw;
+			height: 12vw;
 			border-radius: 50%;
 			background: black;
 			transform: translate(0, 0);

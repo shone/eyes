@@ -59,10 +59,14 @@
 		}
 
 		function normalized(v) {
-			const length = length(v);
-			return {
-				x: v.x / length,
-				y: v.y / length,
+			const l = length(v);
+			if (l > 0) {
+				return {
+					x: v.x / l,
+					y: v.y / l,
+				}
+			} else {
+				return {x: 0, y: 0}
 			}
 		}
 
@@ -128,6 +132,45 @@
 					momentumRight.y += impulse.y;
 				}
 				pointersLeft.delete(event.pointerId) || pointersRight.delete(event.pointerId);
+			}
+		}
+
+		const keysDown = new Set();
+		window.onkeydown = event => {
+			event.preventDefault();
+			keysDown.add(event.key);
+			updateKeyboardPointers();
+		}
+		window.onkeyup = event => {
+			event.preventDefault();
+			keysDown.delete(event.key);
+			updateKeyboardPointers();
+		}
+		function updateKeyboardPointers() {
+			function handleKeys(side, keys) {
+				if (!keys.some(key => keysDown.has(key))) {
+					return null;
+				}
+				let v = {x: 0, y: 0};
+				if (keysDown.has(keys[0])) v.y -= 1;
+				if (keysDown.has(keys[1])) v.x -= 1;
+				if (keysDown.has(keys[2])) v.y += 1;
+				if (keysDown.has(keys[3])) v.x += 1;
+				v = normalized(v);
+				return {
+					side: side,
+					x: (window.innerWidth / 2)  + (v.x * window.innerWidth),
+					y: (window.innerHeight / 2) + (v.y * window.innerHeight),
+				}
+			}
+			const pointerLeft = handleKeys('left',  ['w', 'a', 's', 'd']);
+			const pointerRight = handleKeys('right', ['ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight']);
+			if (pointerLeft || pointerRight) {
+				pointersLeft.set('keyboard-left', pointerLeft || pointerRight);
+				pointersRight.set('keyboard-right', pointerRight || pointerLeft);
+			} else {
+				pointersLeft.delete('keyboard-left');
+				pointersRight.delete('keyboard-right');
 			}
 		}
 

@@ -46,47 +46,72 @@
 		const pupilLeft  = document.querySelector('.eye.left .pupil');
 		const pupilRight = document.querySelector('.eye.right .pupil');
 
-		let positionLeft  = {x: 0, y: 0};
-		let positionRight = {x: 0, y: 0};
-		let momentumLeft  = {x: 0, y: 0};
-		let momentumRight = {x: 0, y: 0};
-		let accelLeft     = {x: 0, y: 0};
-		let accelRight    = {x: 0, y: 0};
-		let accelGamma    = 0;
+		const positionLeft  = {x: 0, y: 0};
+		const positionRight = {x: 0, y: 0};
+		const momentumLeft  = {x: 0, y: 0};
+		const momentumRight = {x: 0, y: 0};
 
-		function length(v) {
-			return Math.sqrt(v.x*v.x + v.y*v.y);
-		}
-
-		function normalized(v) {
-			const l = length(v);
-			if (l > 0) {
-				return {
-					x: v.x / l,
-					y: v.y / l,
+		const vec = {
+			length: v => Math.sqrt(v.x*v.x + v.y*v.y),
+			normalized: v => {
+				const l = vec.length(v);
+				if (l > 0) {
+					return {
+						x: v.x / l,
+						y: v.y / l,
+					}
+				} else {
+					return {x: 0, y: 0}
 				}
-			} else {
-				return {x: 0, y: 0}
-			}
-		}
-
-		function vectorRotated(v, angle) {
-			return {
+			},
+			rotated: (v, angle) => ({
 				x: v.x * Math.cos(angle) - v.y * Math.sin(angle),
 				y: v.x * Math.sin(angle) + v.y * Math.cos(angle),
-			}
-		}
-
-		function average(vectors) {
-			return {
+				z: v.z,
+			}),
+			average: vectors => ({
 				x: [...vectors.values()].map(p => p.x).reduce((n, x) => n + x) / vectors.size,
 				y: [...vectors.values()].map(p => p.y).reduce((n, y) => n + y) / vectors.size,
-			}
+			}),
 		}
 
+		// Accelerometer input
+		const deviceMotion = {
+			rotation:     {x: 0, y: 0, z: 0},
+			acceleration: {x: 0, y: 0, z: 0},
+		}
+		try {
+			if (DeviceMotionEvent.requestPermission) {
+				document.body.onclick = async () => {
+					try {
+						var response = await DeviceMotionEvent.requestPermission()
+					} catch(error) {
+						alert(error);
+					}
+					if (response !== 'granted') {
+						alert(response);
+					}
+				}
+			}
+		} catch(error) {}
+		window.addEventListener('devicemotion', ({rotationRate, acceleration}) => {
+			const orientationAngleDeg = screen.orientation ? screen.orientation.angle : (window.orientation - 180);
+			const orientationAngleRad = (orientationAngleDeg / 360) * Math.PI*2;
+			deviceMotion.rotation = vec.rotated({
+				x: -rotationRate.beta,
+				y: -rotationRate.alpha,
+				z:  rotationRate.gamma
+			}, orientationAngleRad);
+			deviceMotion.acceleration = vec.rotated({
+				x: acceleration.x,
+				y: acceleration.y,
+				z: acceleration.z,
+			}, orientationAngleRad);
+		});
+
+		// Touch/mouse input
 		const pointersLeft  = new Map();
 		const pointersRight = new Map();
-
 		document.body.onpointerdown = event => {
 			event.preventDefault();
 			const pointerId = event.pointerId;
@@ -116,25 +141,29 @@
 			}
 		}
 		document.body.onpointerup = document.body.onpointercancel = event => {
+			event.preventDefault();
 			const pointer = pointersLeft.get(event.pointerId) || pointersRight.get(event.pointerId);
 			if (pointer) {
-				const eyeRadiusPx = window.innerWidth * .16;
-				const impulse = {
-					x: (pointer.movementX / eyeRadiusPx) * 1,
-					y: (pointer.movementY / eyeRadiusPx) * 1,
-				}
-				if (pointer.side === 'left' || pointersLeft.size === 0) {
-					momentumLeft.x += impulse.x;
-					momentumLeft.y += impulse.y;
-				}
-				if (pointer.side === 'right' || pointersRight.size === 0) {
-					momentumRight.x += impulse.x;
-					momentumRight.y += impulse.y;
+				if (pointer.movementX || pointer.movementY) {
+					const eyeRadiusPx = window.innerWidth * .16;
+					const impulse = {
+						x: (pointer.movementX / eyeRadiusPx) * .5,
+						y: (pointer.movementY / eyeRadiusPx) * .5,
+					}
+					if (pointer.side === 'left' || pointersLeft.size === 0) {
+						momentumLeft.x += impulse.x;
+						momentumLeft.y += impulse.y;
+					}
+					if (pointer.side === 'right' || pointersRight.size === 0) {
+						momentumRight.x += impulse.x;
+						momentumRight.y += impulse.y;
+					}
 				}
 				pointersLeft.delete(event.pointerId) || pointersRight.delete(event.pointerId);
 			}
 		}
 
+		// Keyboard input
 		const keysDown = new Set();
 		window.onkeydown = event => {
 			event.preventDefault();
@@ -156,7 +185,7 @@
 				if (keysDown.has(keys[1])) v.x -= 1;
 				if (keysDown.has(keys[2])) v.y += 1;
 				if (keysDown.has(keys[3])) v.x += 1;
-				v = normalized(v);
+				v = vec.normalized(v);
 				return {
 					side: side,
 					x: (window.innerWidth / 2)  + (v.x * window.innerWidth),
@@ -174,21 +203,6 @@
 			}
 		}
 
-		try {
-			if (DeviceMotionEvent.requestPermission) {
-				document.body.onclick = async () => {
-					try {
-						var response = await DeviceMotionEvent.requestPermission()
-					} catch(error) {
-						alert(error);
-					}
-					if (response !== 'granted') {
-						alert(response);
-					}
-				}
-			}
-		} catch(error) {}
-
 		let lastTimestamp = performance.now();
 		window.requestAnimationFrame(function callback(timestamp) {
 			window.requestAnimationFrame(callback);
@@ -196,23 +210,26 @@
 			const deltaT = timestamp - lastTimestamp;
 			lastTimestamp = timestamp;
 
-			const accelLeftRotated  = vectorRotated(accelLeft, Math.PI * Math.sin(timestamp * .001)  * .1);
-			const accelRightRotated = vectorRotated(accelRight, Math.PI * Math.cos(timestamp * .0012) * .1);
-			accelLeftRotated.y  += accelGamma;
-			accelRightRotated.y -= accelGamma;
+			const accelLeftRotated  = vec.rotated(deviceMotion.rotation, Math.PI * Math.sin(timestamp * .001)  * .1);
+			const accelRightRotated = vec.rotated(deviceMotion.rotation, Math.PI * Math.cos(timestamp * .0012) * .1);
+			accelLeftRotated.y  += deviceMotion.rotation.z;
+			accelRightRotated.y -= deviceMotion.rotation.z;
 
 			momentumLeft.x  += accelLeftRotated.x  * .000005 * deltaT;
 			momentumLeft.y  += accelLeftRotated.y  * .000005 * deltaT;
 			momentumRight.x += accelRightRotated.x * .000005 * deltaT;
 			momentumRight.y += accelRightRotated.y * .000005 * deltaT;
 
+			momentumLeft.x  -= deviceMotion.acceleration.x * .0005 * deltaT;
+			momentumLeft.y  += deviceMotion.acceleration.y * .0005 * deltaT;
+			momentumRight.x -= deviceMotion.acceleration.x * .0005 * deltaT;
+			momentumRight.y += deviceMotion.acceleration.y * .0005 * deltaT;
+
 			const eyeRadiusPx = window.innerWidth * .16;
 
 			if (pointersLeft.size > 0 || pointersRight.size > 0) {
-				let lookAtLeftPx  = null;
-				let lookAtRightPx = null;
-				if (pointersLeft.size  > 0) lookAtLeftPx  = average(pointersLeft);
-				if (pointersRight.size > 0) lookAtRightPx = average(pointersRight);
+				const lookAtLeftPx  = (pointersLeft.size  > 0) ? vec.average(pointersLeft)  : null;
+				const lookAtRightPx = (pointersRight.size > 0) ? vec.average(pointersRight) : null;
 
 				const eyeCenterLeftPx  = {x: window.innerWidth * .25, y: window.innerHeight / 2};
 				const eyeCenterRightPx = {x: window.innerWidth * .75, y: window.innerHeight / 2};
@@ -222,7 +239,7 @@
 						x: (px.x - eyePosPx.x) / eyeRadiusPx,
 						y: (px.y - eyePosPx.y) / eyeRadiusPx,
 					}
-					const l = length(eyeCoords);
+					const l = vec.length(eyeCoords);
 					if (l > 1) {
 						eyeCoords.x /= l;
 						eyeCoords.y /= l;
@@ -258,22 +275,6 @@
 
 			pupilLeft.style.transform  = `translate(${positionLeft.x * 12}vw, ${positionLeft.y * 12}vw)`;
 			pupilRight.style.transform = `translate(${positionRight.x * 12}vw, ${positionRight.y * 12}vw)`;
-		});
-
-		window.addEventListener("devicemotion", event => {
-			let rateX, rateY;
-			if (window.innerWidth >= window.innerHeight) {
-				rateX = -event.rotationRate.alpha;
-				rateY = event.rotationRate.beta;
-			} else {
-				rateX = -event.rotationRate.beta;
-				rateY = -event.rotationRate.alpha;
-			}
-			accelLeft.x  = rateX;
-			accelLeft.y  = rateY;
-			accelRight.x = rateX;
-			accelRight.y = rateY;
-			accelGamma = event.rotationRate.gamma;
 		});
 	</script>
 

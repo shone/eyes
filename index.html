@@ -53,13 +53,13 @@
 		let accelLeft     = {x: 0, y: 0};
 		let accelRight    = {x: 0, y: 0};
 		let accelGamma    = 0;
-		let lookAtLeft    = {x: 0, y: 0};
-		let lookAtRight   = {x: 0, y: 0};
 
-		let isDragging = false;
+		function length(v) {
+			return Math.sqrt(v.x*v.x + v.y*v.y);
+		}
 
-		function vectorNormalized(v) {
-			const length = Math.sqrt(v.x*v.x + v.y*v.y);
+		function normalized(v) {
+			const length = length(v);
 			return {
 				x: v.x / length,
 				y: v.y / length,
@@ -73,44 +73,61 @@
 			}
 		}
 
-		function lookAt(p) {
-			const pupilPosLeft  = {x: window.innerWidth * .3, y: window.innerHeight / 2};
-			const pupilPosRight = {x: window.innerWidth * .6, y: window.innerHeight / 2};
-			lookAtLeft = vectorNormalized({
-				x: p.x - pupilPosLeft.x,
-				y: p.y - pupilPosLeft.y,
-			});
-			lookAtRight = vectorNormalized({
-				x: p.x - pupilPosRight.x,
-				y: p.y - pupilPosRight.y,
-			});
-		}
-		
-		document.body.onpointerdown = event => {
-			if (document.body.onpointermove) {
-				return;
+		function average(vectors) {
+			return {
+				x: [...vectors.values()].map(p => p.x).reduce((n, x) => n + x) / vectors.size,
+				y: [...vectors.values()].map(p => p.y).reduce((n, y) => n + y) / vectors.size,
 			}
+		}
+
+		const pointersLeft  = new Map();
+		const pointersRight = new Map();
+
+		document.body.onpointerdown = event => {
 			event.preventDefault();
 			const pointerId = event.pointerId;
 			if (document.body.setPointerCapture) {
 				document.body.setPointerCapture(pointerId);
 			}
-			isDragging = true;
-			lookAt({x: event.pageX, y: event.pageY});
-			document.body.onpointermove = event => {
-				if (event.pointerId !== pointerId) {
-					return;
-				}
-				lookAt({x: event.pageX, y: event.pageY});
+			const pointer = {
+				side: (event.clientX < (window.innerWidth/2)) ? 'left' : 'right',
+				x: event.clientX,
+				y: event.clientY,
+				movementX: 0,
+				movementY: 0,
+			};
+			if (pointer.side === 'left') {
+				pointersLeft.set(pointerId, pointer);
+			} else {
+				pointersRight.set(pointerId, pointer);
 			}
-			document.body.onpointerup = document.body.onpointercancel = event => {
-				if (event.pointerId !== pointerId) {
-					return;
+		}
+		document.body.onpointermove = event => {
+			const pointer = pointersLeft.get(event.pointerId) || pointersRight.get(event.pointerId);
+			if (pointer) {
+				pointer.x = event.clientX;
+				pointer.y = event.clientY;
+				pointer.movementX = event.movementX;
+				pointer.movementY = event.movementY;
+			}
+		}
+		document.body.onpointerup = document.body.onpointercancel = event => {
+			const pointer = pointersLeft.get(event.pointerId) || pointersRight.get(event.pointerId);
+			if (pointer) {
+				const eyeRadiusPx = window.innerWidth * .16;
+				const impulse = {
+					x: (pointer.movementX / eyeRadiusPx) * 1,
+					y: (pointer.movementY / eyeRadiusPx) * 1,
 				}
-				isDragging = false;
-				document.body.onpointermove = null;
-				document.body.onpointerup = null;
-				document.body.onpointercancel = null;
+				if (pointer.side === 'left' || pointersLeft.size === 0) {
+					momentumLeft.x += impulse.x;
+					momentumLeft.y += impulse.y;
+				}
+				if (pointer.side === 'right' || pointersRight.size === 0) {
+					momentumRight.x += impulse.x;
+					momentumRight.y += impulse.y;
+				}
+				pointersLeft.delete(event.pointerId) || pointersRight.delete(event.pointerId);
 			}
 		}
 
@@ -146,13 +163,38 @@
 			momentumRight.x += accelRightRotated.x * .000005 * deltaT;
 			momentumRight.y += accelRightRotated.y * .000005 * deltaT;
 
-			if (isDragging) {
+			const eyeRadiusPx = window.innerWidth * .16;
+
+			if (pointersLeft.size > 0 || pointersRight.size > 0) {
+				let lookAtLeftPx  = null;
+				let lookAtRightPx = null;
+				if (pointersLeft.size  > 0) lookAtLeftPx  = average(pointersLeft);
+				if (pointersRight.size > 0) lookAtRightPx = average(pointersRight);
+
+				const eyeCenterLeftPx  = {x: window.innerWidth * .25, y: window.innerHeight / 2};
+				const eyeCenterRightPx = {x: window.innerWidth * .75, y: window.innerHeight / 2};
+
+				function pxToEyeCoords(px, eyePosPx) {
+					const eyeCoords = {
+						x: (px.x - eyePosPx.x) / eyeRadiusPx,
+						y: (px.y - eyePosPx.y) / eyeRadiusPx,
+					}
+					const l = length(eyeCoords);
+					if (l > 1) {
+						eyeCoords.x /= l;
+						eyeCoords.y /= l;
+					}
+					return eyeCoords;
+				}
+				const lookAtLeft  = pxToEyeCoords(lookAtLeftPx  || lookAtRightPx, eyeCenterLeftPx);
+				const lookAtRight = pxToEyeCoords(lookAtRightPx || lookAtLeftPx,  eyeCenterRightPx);
+
 				momentumLeft.x  += (lookAtLeft.x  - positionLeft.x)  * .002 * deltaT;
 				momentumLeft.y  += (lookAtLeft.y  - positionLeft.y)  * .002 * deltaT;
 				momentumRight.x += (lookAtRight.x - positionRight.x) * .002 * deltaT;
 				momentumRight.y += (lookAtRight.y - positionRight.y) * .002 * deltaT;
 			} else {
-			// Return to center
+				// Return to center
 				momentumLeft.x  -= positionLeft.x  * .001 * deltaT;
 				momentumLeft.y  -= positionLeft.y  * .001 * deltaT;
 				momentumRight.x -= positionRight.x * .001 * deltaT;
@@ -160,7 +202,7 @@
 			}
 
 			// Damping
-			const damping = isDragging ? .008 : .002;
+			const damping = (pointersLeft.size > 0 || pointersRight.size > 0) ? .008 : .002;
 			momentumLeft.x  *= Math.max(1 - (damping * deltaT), 0);
 			momentumLeft.y  *= Math.max(1 - (damping * deltaT), 0);
 			momentumRight.x *= Math.max(1 - (damping * deltaT), 0);
@@ -176,9 +218,6 @@
 		});
 
 		window.addEventListener("devicemotion", event => {
-			if (isDragging) {
-				return;
-			}
 			let rateX, rateY;
 			if (window.innerWidth >= window.innerHeight) {
 				rateX = -event.rotationRate.alpha;

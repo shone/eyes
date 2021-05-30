@@ -12,6 +12,8 @@
 	</head>
 
 	<body>
+		<button id="install-button" class="hide"></button>
+		<button id="fullscreen-button" class="hide"></button>
 		<div class="eye left" > <span class="pupil"></span> </div>
 		<div class="eye right"> <span class="pupil"></span> </div>
 	</body>
@@ -19,28 +21,37 @@
 	<script>
 		'use strict';
 
-		if (navigator.serviceWorker) {
+		if (navigator.serviceWorker && location.protocol !== 'file:') {
 			// Register service worker so app can be installed as a PWA
 			navigator.serviceWorker.register('service-worker.js', {scope: './'});
 		}
 
-		let installButton = null;
+		// Setup install button
 		window.onbeforeinstallprompt = event => {
 			event.preventDefault();
-			if (!installButton) {
-				installButton = document.createElement('button');
-				installButton.classList.add('install');
-				installButton.textContent = 'install';
-				document.body.append(installButton);
-			}
-			installButton.onclick = () => {
-				event.prompt();
-			}
+			const installButton = document.getElementById('install-button');
+			installButton.onclick = () => event.prompt();
+			installButton.classList.remove('hide');
 			event.userChoice.then(result => {
 				if (result.outcome === 'accepted') {
 					installButton.remove();
 				}
 			});
+		}
+
+		// Setup fullscreen button
+		if (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen) {
+			const fullscreenButton = document.getElementById('fullscreen-button');
+			fullscreenButton.onclick = () => {
+				if (!(document.fullscreenElement || document.webkitFullscreenElement)) {
+					if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen({navigationUI: "hide"});
+					else if (document.documentElement.webkitRequestFullscreen) document.documentElement.webkitRequestFullscreen();
+				} else {
+					if (document.exitFullscreen) document.exitFullscreen();
+					else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+				}
+			}
+			fullscreenButton.classList.remove('hide');
 		}
 
 		const pupilLeft  = document.querySelector('.eye.left .pupil');
@@ -113,6 +124,9 @@
 		const pointersLeft  = new Map();
 		const pointersRight = new Map();
 		document.body.onpointerdown = event => {
+			if (event.target.tagName === 'BUTTON') {
+				return;
+			}
 			event.preventDefault();
 			const pointerId = event.pointerId;
 			if (document.body.setPointerCapture) {
@@ -165,15 +179,20 @@
 
 		// Keyboard input
 		const keysDown = new Set();
+		const allKeys = new Set(['w','a','s','d','ArrowUp','ArrowLeft','ArrowDown','ArrowRight']);
 		window.onkeydown = event => {
-			event.preventDefault();
-			keysDown.add(event.key);
-			updateKeyboardPointers();
+			if (allKeys.has(event.key)) {
+				event.preventDefault();
+				keysDown.add(event.key);
+				updateKeyboardPointers();
+			}
 		}
 		window.onkeyup = event => {
-			event.preventDefault();
-			keysDown.delete(event.key);
-			updateKeyboardPointers();
+			if (allKeys.has(event.key)) {
+				event.preventDefault();
+				keysDown.delete(event.key);
+				updateKeyboardPointers();
+			}
 		}
 		function updateKeyboardPointers() {
 			function handleKeys(side, keys) {
@@ -220,10 +239,10 @@
 			momentumRight.x += accelRightRotated.x * .000005 * deltaT;
 			momentumRight.y += accelRightRotated.y * .000005 * deltaT;
 
-			momentumLeft.x  -= deviceMotion.acceleration.x * .0005 * deltaT;
-			momentumLeft.y  += deviceMotion.acceleration.y * .0005 * deltaT;
-			momentumRight.x -= deviceMotion.acceleration.x * .0005 * deltaT;
-			momentumRight.y += deviceMotion.acceleration.y * .0005 * deltaT;
+			momentumLeft.x  -= deviceMotion.acceleration.x * .0003 * deltaT;
+			momentumLeft.y  += deviceMotion.acceleration.y * .0003 * deltaT;
+			momentumRight.x -= deviceMotion.acceleration.x * .0003 * deltaT;
+			momentumRight.y += deviceMotion.acceleration.y * .0003 * deltaT;
 
 			const eyeRadiusPx = window.innerWidth * .16;
 
@@ -255,10 +274,11 @@
 				momentumRight.y += (lookAtRight.y - positionRight.y) * .002 * deltaT;
 			} else {
 				// Return to center
-				momentumLeft.x  -= positionLeft.x  * .001 * deltaT;
-				momentumLeft.y  -= positionLeft.y  * .001 * deltaT;
-				momentumRight.x -= positionRight.x * .001 * deltaT;
-				momentumRight.y -= positionRight.y * .001 * deltaT;
+				const spring = x => Math.pow(x*1.8,3);
+				momentumLeft.x  -= spring(positionLeft.x)  * .001 * deltaT;
+				momentumLeft.y  -= spring(positionLeft.y)  * .001 * deltaT;
+				momentumRight.x -= spring(positionRight.x) * .001 * deltaT;
+				momentumRight.y -= spring(positionRight.y) * .001 * deltaT;
 			}
 
 			// Damping
@@ -294,6 +314,7 @@
 			-webkit-user-select: none;
 			touch-action: none;
 		}
+
 		.eye {
 			width:  40vw;
 			height: 40vw;
@@ -307,8 +328,8 @@
 			justify-content: center;
 			align-items:     center;
 		}
-		.eye:first-of-type {
-			margin-right: 6vw;
+		.eye:last-of-type {
+			margin-left: 6vw;
 		}
 		.pupil {
 			width:  12vw;
@@ -318,14 +339,70 @@
 			transform: translate(0, 0);
 			will-change: transform;
 		}
-		button.install {
+
+		.hide {
+			display: none;
+		}
+
+		button {
 			position: fixed;
-			right: 5px;
-			bottom: 5px;
-			width: 110px;
+			top: 0;
+			width:  50px;
 			height: 50px;
-			font-size: 25px;
+			border: none;
 			padding: 0;
+			cursor: pointer;
+			background: no-repeat center / 80%;
+		}
+		button:hover {
+			transform: scale(1.1);
+		}
+		button:focus {
+			outline: none;
+		}
+		#install-button {
+			left: 0;
+			background-image: url('data:image/svg+xml,\
+				<svg viewBox="0 0 1 1" xmlns="http://www.w3.org/2000/svg">\
+					<path d="m0.57 0.016c-0.058 0-0.11 0.047-0.11 0.11v0.014l0.048 0.014v-0.018h0.43v0.72h-0.43v-0.52l-0.048-0.014v0.55c0 0.058 0.047 0.11 0.11 0.11h0.32c0.058 0 0.11-0.047 0.11-0.11v-0.74c0-0.058-0.047-0.11-0.11-0.11zm0.095 0.87h0.15c0.016 0 0.029 0.013 0.029 0.029s-0.013 0.029-0.029 0.029h-0.15c-0.016 0-0.029-0.013-0.029-0.029 0-0.016 0.013-0.029 0.029-0.029z" fill="white" stroke-linecap="round" stroke-linejoin="round" stroke-width=".16"/>\
+					<rect x=".12" y=".6" width=".15" height=".14" ry=".035" fill="white"/>\
+					<g fill="none" stroke="white" stroke-linecap="round" stroke-linejoin="round" stroke-width=".025">\
+					<rect x=".76" y=".23" width=".12" height=".12" ry=".029"/>\
+					<rect x=".56" y=".43" width=".13" height=".12" ry=".029"/>\
+					<rect x=".75" y=".43" width=".13" height=".12" ry=".029"/>\
+					<rect x=".56" y=".61" width=".13" height=".12" ry=".029"/>\
+					<rect x=".75" y=".61" width=".14" height=".12" ry=".029"/>\
+					</g>\
+					<path d="m0.16 0.52c-6.6e-4 -0.25 0.058-0.39 0.24-0.36 0.11 0.017 0.17 0.062 0.17 0.062l0.024-0.067 0.065 0.15-0.14 0.064 0.023-0.066s-0.039-0.029-0.13-0.05c-0.15-0.034-0.18 0.097-0.19 0.26z" fill="white"/>\
+					<g fill="none" stroke="white" stroke-linecap="round" stroke-width=".03">\
+					<path d="m0.3 0.57 0.036-0.043"/>\
+					<path d="m0.32 0.68h0.051"/>\
+					<path d="m0.3 0.78 0.032 0.034"/>\
+					<path d="m0.19 0.79v0.044"/>\
+					<path d="m0.098 0.78-0.04 0.039"/>\
+					<path d="m0.072 0.68h-0.048"/>\
+					<path d="m0.087 0.58-0.036-0.034"/>\
+					</g>\
+				</svg>\
+			');
+		}
+		#fullscreen-button {
+			right: 0;
+			background-size: 70%;
+			background-image: url('data:image/svg+xml,\
+				<svg viewBox="0 0 8.5 8.5" xmlns="http://www.w3.org/2000/svg">\
+					<path stroke="white" stroke-width="1.3" fill="none" d="M.7 3.5V.7h2.6M7.8 3.5V.7H5.2M.7 5v2.8h2.6M7.8 5v2.8H5.2"/>\
+				</svg>\
+			');
+		}
+		@media (display-mode: fullscreen) {
+			#fullscreen-button {
+				background-image: url('data:image/svg+xml,\
+					<svg viewBox="0 0 8.5 8.5" xmlns="http://www.w3.org/2000/svg">\
+						<path stroke="white" stroke-width="1.3" fill="none" d="m2.868 0.3038v2.8h-2.6m5.364-2.8v2.8h2.6m-5.364 5.164v-2.8h-2.6m5.364 2.8v-2.8h2.6"/>\
+					</svg>\
+				');
+			}
 		}
 	</style>
 </html>

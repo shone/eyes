@@ -40,7 +40,7 @@
 		}
 
 		// Setup fullscreen button
-		if (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen) {
+		if ((document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen) && !window.matchMedia('(display-mode: fullscreen)').matches) {
 			const fullscreenButton = document.getElementById('fullscreen-button');
 			fullscreenButton.onclick = () => {
 				if (!(document.fullscreenElement || document.webkitFullscreenElement)) {

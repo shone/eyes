@@ -21,13 +21,16 @@
 	<script>
 		'use strict';
 
+		// Register service worker so the app can be used offline.
+		// This is also a prerequisite for Chrome allowing the app to be installed as a PWA.
 		if (navigator.serviceWorker && location.protocol !== 'file:') {
-			// Register service worker so app can be installed as a PWA
 			navigator.serviceWorker.register('service-worker.js', {scope: './'});
 		}
 
 		// Setup install button
 		window.onbeforeinstallprompt = event => {
+			// Note: onbeforeinstallprompt is only available on Chrome on Android.
+			// On Safari/iOS, the user must manually add the app to the home screen via the share button.
 			event.preventDefault();
 			const installButton = document.getElementById('install-button');
 			installButton.onclick = () => event.prompt();
@@ -40,18 +43,25 @@
 		}
 
 		// Setup fullscreen button
-		if ((document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen) && !window.matchMedia('(display-mode: fullscreen)').matches) {
-			const fullscreenButton = document.getElementById('fullscreen-button');
-			fullscreenButton.onclick = () => {
-				if (!(document.fullscreenElement || document.webkitFullscreenElement)) {
-					if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen({navigationUI: "hide"});
-					else if (document.documentElement.webkitRequestFullscreen) document.documentElement.webkitRequestFullscreen();
-				} else {
-					if (document.exitFullscreen) document.exitFullscreen();
-					else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+		{
+			// Note that the fullscreen API is only available on iOS for iPad, not iPhone.
+			const isFullscreenApiAvailable = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+			// If the app is launched with the display-mode as fullscreen, it's probably because the app is installed as a PWA.
+			const isDisplayModeFullscreen = window.matchMedia('(display-mode: fullscreen)').matches;
+			if (isFullscreenApiAvailable && !isDisplayModeFullscreen) {
+				const fullscreenButton = document.getElementById('fullscreen-button');
+				fullscreenButton.onclick = () => {
+					// Toggle fullscreen mode
+					if (!(document.fullscreenElement || document.webkitFullscreenElement)) {
+						if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen({navigationUI: "hide"});
+						else if (document.documentElement.webkitRequestFullscreen) document.documentElement.webkitRequestFullscreen();
+					} else {
+						if (document.exitFullscreen) document.exitFullscreen();
+						else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+					}
 				}
+				fullscreenButton.classList.remove('hide');
 			}
-			fullscreenButton.classList.remove('hide');
 		}
 
 		const pupilLeft  = document.querySelector('.eye.left .pupil');
@@ -59,8 +69,13 @@
 
 		const positionLeft  = {x: 0, y: 0};
 		const positionRight = {x: 0, y: 0};
-		const momentumLeft  = {x: 0, y: 0};
-		const momentumRight = {x: 0, y: 0};
+		const velocityLeft  = {x: 0, y: 0};
+		const velocityRight = {x: 0, y: 0};
+
+		// Pointers correspond to finger touches, the mouse cursor or arrow key input.
+		// The eyes will look toward the nearest pointer.
+		const pointersLeft  = new Map();
+		const pointersRight = new Map();
 
 		const vec = {
 			length: v => Math.sqrt(v.x*v.x + v.y*v.y),
@@ -86,12 +101,14 @@
 			}),
 		}
 
-		// Accelerometer input
+		// Device motion input, i.e. accelerometer/gyroscope
 		const deviceMotion = {
 			rotation:     {x: 0, y: 0, z: 0},
 			acceleration: {x: 0, y: 0, z: 0},
 		}
 		try {
+			// On iOS, must request permission before device motion events can be received.
+			// Permission can only be requested after the user has interacted with the page.
 			if (DeviceMotionEvent.requestPermission) {
 				document.body.onclick = async () => {
 					try {
@@ -106,8 +123,10 @@
 			}
 		} catch(error) {}
 		window.addEventListener('devicemotion', ({rotationRate, acceleration}) => {
+			// Chrome and Firefox support screen.orientation, but Safari only supports window.orientation
 			const orientationAngleDeg = screen.orientation ? screen.orientation.angle : (window.orientation - 180);
 			const orientationAngleRad = (orientationAngleDeg / 360) * Math.PI*2;
+			// Rotate the device motion coordinates to match the orientation of the page, e.g. portrait or landscape modes.
 			deviceMotion.rotation = vec.rotated({
 				x: -rotationRate.beta,
 				y: -rotationRate.alpha,
@@ -121,10 +140,9 @@
 		});
 
 		// Touch/mouse input
-		const pointersLeft  = new Map();
-		const pointersRight = new Map();
 		document.body.onpointerdown = event => {
 			if (event.target.tagName === 'BUTTON') {
+				// Ignore events from the install or fullscreen buttons.
 				return;
 			}
 			event.preventDefault();
@@ -159,18 +177,19 @@
 			const pointer = pointersLeft.get(event.pointerId) || pointersRight.get(event.pointerId);
 			if (pointer) {
 				if (pointer.movementX || pointer.movementY) {
+					// Apply pointer ballistics, i.e. allow the pupils to be 'flicked' in a direction.
 					const eyeRadiusPx = window.innerWidth * .16;
 					const impulse = {
 						x: (pointer.movementX / eyeRadiusPx) * .5,
 						y: (pointer.movementY / eyeRadiusPx) * .5,
 					}
 					if (pointer.side === 'left' || pointersLeft.size === 0) {
-						momentumLeft.x += impulse.x;
-						momentumLeft.y += impulse.y;
+						velocityLeft.x += impulse.x;
+						velocityLeft.y += impulse.y;
 					}
 					if (pointer.side === 'right' || pointersRight.size === 0) {
-						momentumRight.x += impulse.x;
-						momentumRight.y += impulse.y;
+						velocityRight.x += impulse.x;
+						velocityRight.y += impulse.y;
 					}
 				}
 				pointersLeft.delete(event.pointerId) || pointersRight.delete(event.pointerId);
@@ -178,6 +197,8 @@
 		}
 
 		// Keyboard input
+		// WASD or arrow keys can be used to make the eyes look in a direction.
+		// Both sets of keys can also be used simultaneously to control each eye independently.
 		const keysDown = new Set();
 		const allKeys = new Set(['w','a','s','d','ArrowUp','ArrowLeft','ArrowDown','ArrowRight']);
 		window.onkeydown = event => {
@@ -211,7 +232,7 @@
 					y: (window.innerHeight / 2) + (v.y * window.innerHeight),
 				}
 			}
-			const pointerLeft = handleKeys('left',  ['w', 'a', 's', 'd']);
+			const pointerLeft  = handleKeys('left',  ['w', 'a', 's', 'd']);
 			const pointerRight = handleKeys('right', ['ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight']);
 			if (pointerLeft || pointerRight) {
 				pointersLeft.set('keyboard-left', pointerLeft || pointerRight);
@@ -222,27 +243,29 @@
 			}
 		}
 
+		// Animation physics loop
 		let lastTimestamp = performance.now();
 		window.requestAnimationFrame(function callback(timestamp) {
 			window.requestAnimationFrame(callback);
 
-			const deltaT = timestamp - lastTimestamp;
+			const deltaTime = timestamp - lastTimestamp;
 			lastTimestamp = timestamp;
 
+			// Apply some variable difference in rotation ('wobble') between the left/right eye.
 			const accelLeftRotated  = vec.rotated(deviceMotion.rotation, Math.PI * Math.sin(timestamp * .001)  * .1);
 			const accelRightRotated = vec.rotated(deviceMotion.rotation, Math.PI * Math.cos(timestamp * .0012) * .1);
 			accelLeftRotated.y  += deviceMotion.rotation.z;
 			accelRightRotated.y -= deviceMotion.rotation.z;
 
-			momentumLeft.x  += accelLeftRotated.x  * .000005 * deltaT;
-			momentumLeft.y  += accelLeftRotated.y  * .000005 * deltaT;
-			momentumRight.x += accelRightRotated.x * .000005 * deltaT;
-			momentumRight.y += accelRightRotated.y * .000005 * deltaT;
+			velocityLeft.x  += accelLeftRotated.x  * .000005 * deltaTime;
+			velocityLeft.y  += accelLeftRotated.y  * .000005 * deltaTime;
+			velocityRight.x += accelRightRotated.x * .000005 * deltaTime;
+			velocityRight.y += accelRightRotated.y * .000005 * deltaTime;
 
-			momentumLeft.x  -= deviceMotion.acceleration.x * .0003 * deltaT;
-			momentumLeft.y  += deviceMotion.acceleration.y * .0003 * deltaT;
-			momentumRight.x -= deviceMotion.acceleration.x * .0003 * deltaT;
-			momentumRight.y += deviceMotion.acceleration.y * .0003 * deltaT;
+			velocityLeft.x  -= deviceMotion.acceleration.x * .0003 * deltaTime;
+			velocityLeft.y  += deviceMotion.acceleration.y * .0003 * deltaTime;
+			velocityRight.x -= deviceMotion.acceleration.x * .0003 * deltaTime;
+			velocityRight.y += deviceMotion.acceleration.y * .0003 * deltaTime;
 
 			const eyeRadiusPx = window.innerWidth * .16;
 
@@ -265,33 +288,36 @@
 					}
 					return eyeCoords;
 				}
+
+				// When there's only pointer(s) for one eye, the other eye will also look in that direction.
+				// Otherwise, each set of pointers will control each eye independently.
 				const lookAtLeft  = pxToEyeCoords(lookAtLeftPx  || lookAtRightPx, eyeCenterLeftPx);
 				const lookAtRight = pxToEyeCoords(lookAtRightPx || lookAtLeftPx,  eyeCenterRightPx);
 
-				momentumLeft.x  += (lookAtLeft.x  - positionLeft.x)  * .002 * deltaT;
-				momentumLeft.y  += (lookAtLeft.y  - positionLeft.y)  * .002 * deltaT;
-				momentumRight.x += (lookAtRight.x - positionRight.x) * .002 * deltaT;
-				momentumRight.y += (lookAtRight.y - positionRight.y) * .002 * deltaT;
+				velocityLeft.x  += (lookAtLeft.x  - positionLeft.x)  * .002 * deltaTime;
+				velocityLeft.y  += (lookAtLeft.y  - positionLeft.y)  * .002 * deltaTime;
+				velocityRight.x += (lookAtRight.x - positionRight.x) * .002 * deltaTime;
+				velocityRight.y += (lookAtRight.y - positionRight.y) * .002 * deltaTime;
 			} else {
 				// Return to center
-				const spring = x => Math.pow(x*1.8,3);
-				momentumLeft.x  -= spring(positionLeft.x)  * .001 * deltaT;
-				momentumLeft.y  -= spring(positionLeft.y)  * .001 * deltaT;
-				momentumRight.x -= spring(positionRight.x) * .001 * deltaT;
-				momentumRight.y -= spring(positionRight.y) * .001 * deltaT;
+				const spring = x => Math.pow(x*1.8,3); // Increase return-to-center force when at the edge of the eye
+				velocityLeft.x  -= spring(positionLeft.x)  * .001 * deltaTime;
+				velocityLeft.y  -= spring(positionLeft.y)  * .001 * deltaTime;
+				velocityRight.x -= spring(positionRight.x) * .001 * deltaTime;
+				velocityRight.y -= spring(positionRight.y) * .001 * deltaTime;
 			}
 
-			// Damping
+			// Damping/friction
 			const damping = (pointersLeft.size > 0 || pointersRight.size > 0) ? .008 : .002;
-			momentumLeft.x  *= Math.max(1 - (damping * deltaT), 0);
-			momentumLeft.y  *= Math.max(1 - (damping * deltaT), 0);
-			momentumRight.x *= Math.max(1 - (damping * deltaT), 0);
-			momentumRight.y *= Math.max(1 - (damping * deltaT), 0);
+			velocityLeft.x  *= Math.max(1 - (damping * deltaTime), 0);
+			velocityLeft.y  *= Math.max(1 - (damping * deltaTime), 0);
+			velocityRight.x *= Math.max(1 - (damping * deltaTime), 0);
+			velocityRight.y *= Math.max(1 - (damping * deltaTime), 0);
 
-			positionLeft.x  += momentumLeft.x  * .1 * deltaT;
-			positionLeft.y  += momentumLeft.y  * .1 * deltaT;
-			positionRight.x += momentumRight.x * .1 * deltaT;
-			positionRight.y += momentumRight.y * .1 * deltaT;
+			positionLeft.x  += velocityLeft.x  * .1 * deltaTime;
+			positionLeft.y  += velocityLeft.y  * .1 * deltaTime;
+			positionRight.x += velocityRight.x * .1 * deltaTime;
+			positionRight.y += velocityRight.y * .1 * deltaTime;
 
 			pupilLeft.style.transform  = `translate(${positionLeft.x * 12}vw, ${positionLeft.y * 12}vw)`;
 			pupilRight.style.transform = `translate(${positionRight.x * 12}vw, ${positionRight.y * 12}vw)`;

@@ -303,10 +303,15 @@
 			} else {
 				// Return to center
 				const spring = x => Math.pow(x*1.8,3); // Increase return-to-center force when at the edge of the eye
-				velocityLeft.x  -= spring(positionLeft.x)  * .001 * deltaTime;
-				velocityLeft.y  -= spring(positionLeft.y)  * .001 * deltaTime;
-				velocityRight.x -= spring(positionRight.x) * .001 * deltaTime;
-				velocityRight.y -= spring(positionRight.y) * .001 * deltaTime;
+				const maxSpringForce = 4;
+				const forceLeft  = Math.min(spring(vec.length(positionLeft)),  maxSpringForce);
+				const forceRight = Math.min(spring(vec.length(positionRight)), maxSpringForce);
+				const normalizedLeft  = vec.normalized(positionLeft);
+				const normalizedRight = vec.normalized(positionRight);
+				velocityLeft.x  -= normalizedLeft.x  * forceLeft  * .001 * deltaTime;
+				velocityLeft.y  -= normalizedLeft.y  * forceLeft  * .001 * deltaTime;
+				velocityRight.x -= normalizedRight.x * forceRight * .001 * deltaTime;
+				velocityRight.y -= normalizedRight.y * forceRight * .001 * deltaTime;
 			}
 
 			// Damping/friction

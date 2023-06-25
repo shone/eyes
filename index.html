@@ -204,7 +204,7 @@
 		const keysDown = new Set();
 		const allKeys = new Set(['w','a','s','d','ArrowUp','ArrowLeft','ArrowDown','ArrowRight']);
 		window.onkeydown = event => {
-			if (allKeys.has(event.key)) {
+			if (allKeys.has(event.key) && !(event.altKey || event.ctrlKey || event.shiftKey)) {
 				event.preventDefault();
 				keysDown.add(event.key);
 				updateKeyboardPointers();
